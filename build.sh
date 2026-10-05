@@ -393,6 +393,7 @@ if (( TEST )); then
         Sources/Vorssaint/Core/ReleaseNotes.swift
         Sources/Vorssaint/Core/URLCleaning.swift
         Sources/Vorssaint/Services/GeneralPasteboardAccess.swift
+        Sources/Vorssaint/Services/PasteboardChangeMonitor.swift
         Sources/Vorssaint/Services/Clipboard/ClipboardHistoryWrite.swift
         Sources/Vorssaint/Services/Audio/AirPlayRouteManager.swift
         Sources/Vorssaint/Services/Audio/MixerRoutingSupport.swift

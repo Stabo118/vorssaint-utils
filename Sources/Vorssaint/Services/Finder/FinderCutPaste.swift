@@ -591,7 +591,8 @@ final class FinderCutPaste: ObservableObject {
                                 totalBytes: Int64) -> DispatchSourceTimer {
         let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
         timer.schedule(deadline: .now() + CutPasteProgressSupport.pollInterval,
-                       repeating: CutPasteProgressSupport.pollInterval)
+                       repeating: CutPasteProgressSupport.pollInterval,
+                       leeway: .milliseconds(Int(CutPasteProgressSupport.pollInterval * 200)))
         timer.setEventHandler { [weak self] in
             let attributes = try? FileManager.default.attributesOfItem(atPath: destination.path)
             let current = (attributes?[.size] as? NSNumber)?.int64Value ?? 0

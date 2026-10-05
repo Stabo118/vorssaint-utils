@@ -52,9 +52,17 @@ enum NotchMenuBarSpace {
         return result
     }
 
+    /// Position and size come back in one round trip: this runs for every
+    /// menu each second the island watches the bar, and each separate read
+    /// is a message the menu bar's owner has to answer. An attribute that
+    /// fails arrives as an error value, which the type checks below reject.
     private static func frame(_ element: AXUIElement, primaryTop: CGFloat) -> CGRect? {
-        guard let rawPosition = value(element, kAXPositionAttribute), CFGetTypeID(rawPosition) == AXValueGetTypeID(),
-              let rawSize = value(element, kAXSizeAttribute), CFGetTypeID(rawSize) == AXValueGetTypeID() else { return nil }
+        var result: CFArray?
+        let attributes = [kAXPositionAttribute, kAXSizeAttribute] as CFArray
+        guard AXUIElementCopyMultipleAttributeValues(element, attributes, [], &result) == .success,
+              let values = result as? [CFTypeRef], values.count == 2 else { return nil }
+        let rawPosition = values[0], rawSize = values[1]
+        guard CFGetTypeID(rawPosition) == AXValueGetTypeID(), CFGetTypeID(rawSize) == AXValueGetTypeID() else { return nil }
         let position = unsafeBitCast(rawPosition, to: AXValue.self)
         let size = unsafeBitCast(rawSize, to: AXValue.self)
         var point = CGPoint.zero

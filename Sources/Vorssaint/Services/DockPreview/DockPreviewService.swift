@@ -74,6 +74,11 @@ final class DockPreviewService: ObservableObject {
     private var cachedPreferences: DockPreviewPreferences?
     private var currentSpaceOnly = false
     private var spaceChangeObserver: NSObjectProtocol?
+    /// Screen frames for the tap's per-move checks, which would otherwise
+    /// bridge `NSScreen.screens` twice for every mouse move on the system.
+    /// Dropped when the display arrangement changes.
+    private var cachedScreenFrames: [CGRect]?
+    private var screenParametersObserver: NSObjectProtocol?
 
     private init() {}
 
@@ -588,8 +593,8 @@ final class DockPreviewService: ObservableObject {
     /// Dock geometry is unknown so detection never silently stops working.
     private func isNearDock(_ point: CGPoint) -> Bool {
         guard let preferences = cachedPreferences else { return true }
-        let screen = NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) } ?? NSScreen.main
-        guard let frame = screen?.frame else { return true }
+        let frame = screenFrames.first { NSMouseInRect(point, $0, false) } ?? NSScreen.main?.frame
+        guard let frame else { return true }
         let band = DockPreviewSupport.dockProximityBand(tileSize: preferences.hoverTileSize)
         switch preferences.orientation {
         case .bottom: return point.y <= frame.minY + band
@@ -1524,10 +1529,24 @@ final class DockPreviewService: ObservableObject {
     }
 
     private var menuBarScreenTopY: CGFloat {
-        let menuBarScreen = NSScreen.screens.first {
-            abs($0.frame.minX) < 0.5 && abs($0.frame.minY) < 0.5
+        if let menuBarFrame = screenFrames.first(where: { abs($0.minX) < 0.5 && abs($0.minY) < 0.5 }) {
+            return menuBarFrame.maxY
         }
-        return (menuBarScreen ?? NSScreen.main ?? NSScreen.screens.first)?.frame.maxY ?? 0
+        return (NSScreen.main ?? NSScreen.screens.first)?.frame.maxY ?? 0
+    }
+
+    private var screenFrames: [CGRect] {
+        if let cachedScreenFrames { return cachedScreenFrames }
+        if screenParametersObserver == nil {
+            screenParametersObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification,
+                object: nil, queue: .main) { [weak self] _ in
+                self?.cachedScreenFrames = nil
+            }
+        }
+        let frames = NSScreen.screens.map(\.frame)
+        cachedScreenFrames = frames
+        return frames
     }
 }
 
@@ -1758,6 +1777,7 @@ final class DockPreviewPinnedPanel: ObservableObject, Identifiable {
         let timer = Timer(timeInterval: Self.refreshInterval, repeats: true) { [weak self] _ in
             self?.refreshWindows()
         }
+        timer.tolerance = Self.refreshInterval * 0.2
         RunLoop.main.add(timer, forMode: .common)
         refreshTimer = timer
     }
