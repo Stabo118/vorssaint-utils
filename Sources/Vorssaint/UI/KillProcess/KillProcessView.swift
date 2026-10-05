@@ -295,9 +295,11 @@ struct KillProcessView: View {
         }
         guard refreshTimer == nil else { return }
         service.refresh()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
             service.refresh()
         }
+        timer.tolerance = 0.5
+        refreshTimer = timer
     }
 
     private func stopTimer() {

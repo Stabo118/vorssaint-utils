@@ -337,6 +337,7 @@ final class AirPlayRouteManager: NSObject, ObservableObject {
             pollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
                 self?.refreshActiveDevice()
             }
+            pollTimer?.tolerance = 0.3
         } else if !wanted, let timer = pollTimer {
             timer.invalidate()
             pollTimer = nil

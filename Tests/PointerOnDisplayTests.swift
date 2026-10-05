@@ -98,6 +98,7 @@ enum PointerOnDisplayContract {
     final class Dock {
         typealias NSScreen = Screen
         let cachedPreferences: DockPreviewPreferences?
+        var screenFrames: [CGRect] { NSScreen.screens.map(\.frame) }
         init(_ orientation: DockPreviewOrientation) {
             cachedPreferences = DockPreviewPreferences(orientation: orientation, autohide: false, tileSize: 64,
                                                        magnification: false, magnifiedTileSize: 128)
