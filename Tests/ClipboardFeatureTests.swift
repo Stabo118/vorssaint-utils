@@ -1015,6 +1015,7 @@ enum ClipboardFeatureTests {
         ClipboardHistoryWriteTests.run(suite)
         ClipboardHistoryImageEditorTests.run(suite)
         ClipboardHistoryAccessTests.run(suite)
+        PasteboardChangeMonitorTests.run(suite)
 
         let pasteboardAccess = GeneralPasteboardAccess(label: "Vorssaint.Tests.PasteboardAccess")
         let pasteboardGroup = DispatchGroup()

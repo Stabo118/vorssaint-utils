@@ -64,7 +64,7 @@ final class ClipboardHistoryService: ObservableObject {
         forKey: DefaultsKey.clipboardHistoryQuickPreview
     )
 
-    private var timer: Timer?
+    private var pasteboardSubscription: PasteboardChangeMonitor.Subscription?
     private var lastChangeCount = 0
     /// The poll reads the pasteboard off the main thread: while a password
     /// prompt is up the pasteboard server can take seconds to answer, and a
@@ -625,16 +625,13 @@ final class ClipboardHistoryService: ObservableObject {
     }
 
     private func start() {
-        guard timer == nil else {
+        guard pasteboardSubscription == nil else {
             isRunning = true
             return
         }
-        let timer = Timer(timeInterval: 0.8, repeats: true) { [weak self] _ in
-            self?.captureIfChanged()
+        pasteboardSubscription = PasteboardChangeMonitor.shared.subscribe { [weak self] changeCount in
+            self?.pasteboardDidTick(changeCount: changeCount)
         }
-        timer.tolerance = 0.25
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
         isRunning = true
         ClipboardIgnoredApps.shared.setHistoryRunning(true)
         captureState.restart()
@@ -642,8 +639,10 @@ final class ClipboardHistoryService: ObservableObject {
     }
 
     private func stop() {
-        timer?.invalidate()
-        timer = nil
+        if let pasteboardSubscription {
+            PasteboardChangeMonitor.shared.cancel(pasteboardSubscription)
+        }
+        pasteboardSubscription = nil
         isRunning = false
         ClipboardIgnoredApps.shared.setHistoryRunning(false)
         captureState.invalidate()
@@ -659,6 +658,20 @@ final class ClipboardHistoryService: ObservableObject {
         case files([String])
         case image((data: Data, width: Int, height: Int))
         case text(String)
+    }
+
+    /// The shared heartbeat already read the count. An unchanged count only
+    /// closes the ignored-apps window, exactly as a capture that found
+    /// nothing new would; a change or a pending baseline reads the content.
+    private func pasteboardDidTick(changeCount: Int) {
+        guard isRunning else { return }
+        guard captureState.needsBaseline || changeCount != lastChangeCount else {
+            if !captureState.inFlight {
+                _ = ClipboardIgnoredApps.shared.excludedSourceSinceLastCheck()
+            }
+            return
+        }
+        captureIfChanged()
     }
 
     private func captureIfChanged() {

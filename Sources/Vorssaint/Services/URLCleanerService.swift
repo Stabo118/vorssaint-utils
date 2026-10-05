@@ -37,7 +37,7 @@ final class URLCleanerService: ObservableObject {
         let cleaned: URLCleaning.Result?
     }
 
-    private var timer: Timer?
+    private var pasteboardSubscription: PasteboardChangeMonitor.Subscription?
     private var lastChangeCount = 0
     private var pollInFlight = false
     private var pollToken: PollToken?
@@ -72,25 +72,32 @@ final class URLCleanerService: ObservableObject {
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        if let pasteboardSubscription {
+            PasteboardChangeMonitor.shared.cancel(pasteboardSubscription)
+        }
+        pasteboardSubscription = nil
         cancelPoll()
         isRunning = false
     }
 
     private func start() {
-        guard timer == nil else {
+        guard pasteboardSubscription == nil else {
             isRunning = true
             return
         }
-        let timer = Timer(timeInterval: 0.8, repeats: true) { [weak self] _ in
-            self?.cleanClipboardIfNeeded()
+        pasteboardSubscription = PasteboardChangeMonitor.shared.subscribe { [weak self] changeCount in
+            self?.pasteboardDidTick(changeCount: changeCount)
         }
-        timer.tolerance = 0.25
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
         isRunning = true
         baselinePasteboard()
+    }
+
+    /// The shared heartbeat already read the count. Only a change is worth
+    /// the lane trip that reads the copy and may rewrite it; that trip reads
+    /// the count again, inside the same transaction as the rewrite.
+    private func pasteboardDidTick(changeCount: Int) {
+        guard isRunning, changeCount != lastChangeCount else { return }
+        cleanClipboardIfNeeded()
     }
 
     /// Reads the initial change count away from the main thread. It shares the

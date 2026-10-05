@@ -13,7 +13,7 @@ import Foundation
 final class ClipboardAutoClearService {
     static let shared = ClipboardAutoClearService()
 
-    private var timer: Timer?
+    private var pasteboardSubscription: PasteboardChangeMonitor.Subscription?
     /// The change count last acted on, and when it first appeared. The date is
     /// wall clock rather than a count of ticks: timers do not fire while the
     /// Mac sleeps, so a machine asleep past the delay clears on the first tick
@@ -22,7 +22,7 @@ final class ClipboardAutoClearService {
     private var lastChangeDate = Date()
     /// The count our own clear produced, so a clear is never mistaken for a copy.
     private var lastClearedChangeCount = -1
-    /// Only ever one read in flight, mirroring the history poll: while a
+    /// Only ever one baseline read in flight, mirroring the history poll: while a
     /// password prompt holds the pasteboard server a read can take seconds, and
     /// letting ticks pile up would spawn a thread each time.
     private var readInFlight = false
@@ -89,19 +89,18 @@ final class ClipboardAutoClearService {
     }
 
     private func startTimer() {
-        guard timer == nil else { return }
+        guard pasteboardSubscription == nil else { return }
         baseline()
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            self?.tick()
+        pasteboardSubscription = PasteboardChangeMonitor.shared.subscribe { [weak self] changeCount in
+            self?.tick(changeCount: changeCount)
         }
-        timer.tolerance = 0.2
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
     }
 
     private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
+        if let pasteboardSubscription {
+            PasteboardChangeMonitor.shared.cancel(pasteboardSubscription)
+        }
+        pasteboardSubscription = nil
         readGeneration &+= 1
         readInFlight = false
     }
@@ -116,26 +115,27 @@ final class ClipboardAutoClearService {
         }
     }
 
-    private func tick() {
+    /// The count comes from the shared heartbeat, which already read it on
+    /// the lane; the delay decision itself needs no pasteboard access.
+    private func tick(changeCount count: Int) {
+        // The baseline still decides what was already there when watching began.
+        guard pasteboardSubscription != nil, !readInFlight else { return }
         let delay = Defaults.sanitizedClipboardAutoClearDelay(
             UserDefaults.standard.integer(forKey: DefaultsKey.clipboardAutoClearDelay))
-        readChangeCount { [weak self] count in
-            guard let self else { return }
-            switch ClipboardAutoClearSupport.decide(changeCount: count,
-                                                    lastChangeCount: self.lastChangeCount,
-                                                    lastClearedChangeCount: self.lastClearedChangeCount,
-                                                    lastChangeDate: self.lastChangeDate,
-                                                    now: Date(),
-                                                    delay: TimeInterval(delay)) {
-            case .noteChange:
-                self.lastChangeCount = count
-                self.lastChangeDate = Date()
-            case .clear:
-                self.clearNow(expecting: count,
-                              triggerPreferenceKey: DefaultsKey.clipboardAutoClearOnDelay)
-            case .wait:
-                break
-            }
+        switch ClipboardAutoClearSupport.decide(changeCount: count,
+                                                lastChangeCount: lastChangeCount,
+                                                lastClearedChangeCount: lastClearedChangeCount,
+                                                lastChangeDate: lastChangeDate,
+                                                now: Date(),
+                                                delay: TimeInterval(delay)) {
+        case .noteChange:
+            lastChangeCount = count
+            lastChangeDate = Date()
+        case .clear:
+            clearNow(expecting: count,
+                     triggerPreferenceKey: DefaultsKey.clipboardAutoClearOnDelay)
+        case .wait:
+            break
         }
     }
 
